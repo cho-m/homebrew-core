@@ -10,7 +10,7 @@ class NetTools < Formula
   depends_on :linux
 
   def install
-    system "yes '' | make config"
+    system "yes '' | ./configure.sh config.in"
     system "make"
     system "make", "DESTDIR=#{prefix}", "install"
   end
