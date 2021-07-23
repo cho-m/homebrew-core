@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   tap_syntax:
-    if: github.repository == 'Homebrew/homebrew-core'
+    if: github.repository == 'cho-m/homebrew-core'
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/homebrew/ubuntu16.04:master
@@ -41,7 +41,7 @@ jobs:
         id: formulae-detect
 
   setup_tests:
-    if: github.event_name == 'pull_request' && github.repository == 'Homebrew/homebrew-core'
+    if: github.event_name == 'pull_request' && github.repository == 'cho-m/homebrew-core'
     runs-on: ubuntu-latest
     needs: tap_syntax
     outputs:
