@@ -60,6 +60,10 @@ class TclTk < Formula
   end
 
   def install
+    # Remove SQLite extension for Tcl that is included with Tcl source
+    # tarball as it conflicts with `sqlite-analyzer` formula on Linux.
+    rm_r Dir["pkgs/sqlite*"] if OS.linux?
+
     args = %W[
       --prefix=#{prefix}
       --mandir=#{man}
