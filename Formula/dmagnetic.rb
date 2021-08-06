@@ -23,11 +23,19 @@ class Dmagnetic < Formula
   end
 
   test do
-    assert_match "ab9ec7787593e310ac4d8187db3f6cee", \
-      shell_output("echo Hello | #{bin}/dMagnetic "\
-                   "-vmode none -vcols 300 -vrows 300 -vecho -sres 1024x768 "\
-                   "-mag #{share}/games/dMagnetic/minitest.mag "\
-                   "-gfx #{share}/games/dMagnetic/minitest.gfx "\
-                   "| md5").strip
+    md5 = "md5"
+    on_linux { md5 = "md5sum" }
+    dmagnetic_cmd = "#{bin}/dMagnetic " + %W[
+      -vmode none
+      -vcols 300
+      -vrows 300
+      -vecho
+      -sres 1024x768
+      -mag #{share}/games/dMagnetic/minitest.mag
+      -gfx #{share}/games/dMagnetic/minitest.gfx
+    ].join(" ")
+
+    result = pipe_output(md5, pipe_output(dmagnetic_cmd, "Hello"))
+    assert_match "ab9ec7787593e310ac4d8187db3f6cee", result.chomp.split.first
   end
 end
