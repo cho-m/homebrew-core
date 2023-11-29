@@ -1,11 +1,11 @@
 class Autopsy < Formula
   desc "Graphical interface to Sleuth Kit investigation tools"
   homepage "https://www.sleuthkit.org/autopsy/index.php"
-  url "https://downloads.sourceforge.net/project/autopsy/autopsy/2.24/autopsy-2.24.tar.gz"
-  sha256 "ab787f519942783d43a561d12be0554587f11f22bc55ab79d34d8da703edc09e"
+  url "https://github.com/sleuthkit/autopsy/releases/download/autopsy-4.21.0/autopsy-4.21.0.zip"
+  sha256 "49228e6e5d6ecbfb6da8362c18df0ddfe86691556a461bfdbe2a8963088c5a24"
 
   livecheck do
-    url "https://github.com/sleuthkit/autopsy.git"
+    url :stable
     regex(/autopsy[._-]v?(\d+(?:\.\d+)+)/i)
     strategy :github_latest
   end
@@ -23,86 +23,51 @@ class Autopsy < Formula
     sha256 cellar: :any_skip_relocation, x86_64_linux:   "5e1ce8b5147639d7737a4013030ee2a059d1b8dd4657554e08e9423a9a6b2f66"
   end
 
+  depends_on "cmake" => :build
+  # Installs pre-built x86-64 binaries (parse_prefetch*, Export_srudb*) and
+  # `sleuthkit` JAR doesn't include NATIVELIBS/aarch64/mac/libtsk_jni.jnilib
+  depends_on arch: :x86_64
+  depends_on "jpeg-turbo"
+  depends_on "libheif"
+  depends_on "openjdk"
   depends_on "sleuthkit"
+  depends_on "testdisk"
 
-  uses_from_macos "perl"
-
-  on_linux do
-    depends_on "file-formula"
-    depends_on "grep"
-    depends_on "md5sha1sum"
-  end
-
-  # fixes weird configure script that wouldn't work nicely with homebrew
-  patch :DATA
-
-  def autcfg
-    # Although these binaries are usually available on Linux, they can be in different locations
-    # so we use the brewed versions instead.
-
-    grep = "/usr/bin/grep"
-    file = "/usr/bin/file"
-    md5 = "/sbin/md5"
-    sha1 = "/usr/bin/shasum"
-
-    on_linux do
-      grep = Formula["grep"].opt_bin/"grep"
-      file = Formula["file"].opt_bin/"file"
-      md5 = Formula["md5sha1sum"].opt_bin/"md5sum"
-      sha1 = Formula["md5sha1sum"].opt_bin/"sha1sum"
-    end
-
-    <<~EOS
-      # Autopsy configuration settings
-
-      # when set to 1, the server will stop after it receives no
-      # connections for STIMEOUT seconds.
-      $USE_STIMEOUT = 0;
-      $STIMEOUT = 3600;
-
-      # number of seconds that child waits for input from client
-      $CTIMEOUT = 15;
-
-      # set to 1 to save the cookie value in a file (for scripting)
-      $SAVE_COOKIE = 1;
-
-      $INSTALLDIR = '#{prefix}';
-
-
-      # System Utilities
-      $GREP_EXE = '#{grep}';
-      $FILE_EXE = '#{file}';
-      $MD5_EXE = '#{md5}';
-      $SHA1_EXE = '#{sha1}';
-
-
-      # Directories
-      $TSKDIR = '#{Formula["sleuthkit"].opt_bin}';
-
-      # Homebrew users can install NSRL database and change this variable later
-      $NSRLDB = '';
-
-      # Evidence locker location
-      $LOCKDIR = '#{var}/lib/autopsy';
-    EOS
+  resource "autopsy-src" do
+    url "https://github.com/sleuthkit/autopsy/archive/refs/tags/autopsy-4.21.0.tar.gz"
+    sha256 "044d8466edb995c619ef310a6ca0a2216cb5c63d32395b718aea129bab78649c"
   end
 
   def install
-    (var+"lib/autopsy").mkpath
-    mv "lib", "libexec"
-    prefix.install %w[global.css help libexec pict]
-    prefix.install Dir["*.txt"]
-    (prefix+"conf.pl").write autcfg
-    inreplace "base/autopsy.base", "/tmp/autopsy", prefix
-    inreplace "base/autopsy.base", "lib/define.pl", "#{libexec}/define.pl"
-    bin.install "base/autopsy.base" => "autopsy"
-  end
+    rm_rf Dir["**/*.{cmd,dll,exe}", "platform/modules/lib/{aarch64,i386,riscv64}"]
+    libexec.install Dir["*"]
+    bin.install_symlink Dir[libexec/"bin/*"]
 
-  def caveats
-    <<~EOS
-      By default, the evidence locker is in:
-        #{var}/lib/autopsy
-    EOS
+    # Perform setup based on https://github.com/sleuthkit/autopsy/blob/develop/unix_setup.sh
+    java_home = Language::Java.java_home
+    inreplace libexec/"etc/autopsy.conf", /^#jdkhome=.*$/, "jdkhome=\"#{java_home}\""
+    sleuthkit_jar = "sleuthkit-#{Formula["sleuthkit"].version}.jar"
+    (libexec/"autopsy/modules/ext"/sleuthkit_jar).unlink
+    (libexec/"autopsy/modules/ext").install_symlink Formula["sleuthkit"].opt_share/"java"/sleuthkit_jar
+    chmod "+x", libexec.glob("autopsy/markmckinnon/{Export,parse}*")
+    chmod "+x", libexec.glob("autopsy/solr/bin/**/*")
+    chmod "+x", libexec/"bin/autopsy"
+
+    # Rebuild binaries with broken linkage
+    modules_libdir = libexec/"autopsy/modules/lib"
+    %w[x86_64 amd64].each do |arch|
+      (modules_libdir/arch/"libheifconvert.dylib").unlink
+      (modules_libdir/arch/"libheifconvert.so").unlink
+    end
+    resource("autopsy-src").stage do
+      ENV["JAVA_HOME"] = java_home
+      system "cmake", "-S", "thirdparty/libheif/HeifConvertJNI", "-B", "build",
+                      "-DCMAKE_INSTALL_BINDIR=.",
+                      *std_cmake_args(install_prefix: libexec/"autopsy/modules/lib/x86_64", install_libdir: ".")
+      system "cmake", "--build", "build"
+      system "cmake", "--install", "build"
+    end
+    (modules_libdir/"amd64").install_symlink modules_libdir/"x86_64"/shared_library("libheifconvert")
   end
 
   test do
@@ -112,16 +77,3 @@ class Autopsy < Formula
     end
   end
 end
-
-__END__
-diff --git a/base/autopsy.base b/base/autopsy.base
-index 3b3bbdc..a0d2632 100644
---- a/base/autopsy.base
-+++ b/base/autopsy.base
-@@ -1,3 +1,6 @@
-+#!/usr/bin/perl -wT
-+use lib '/tmp/autopsy/';
-+use lib '/tmp/autopsy/libexec/';
- #
- # autopsy gui server
- # Autopsy Forensic Browser
